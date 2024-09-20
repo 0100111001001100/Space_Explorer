@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Explorer</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+    <style>
+        body { text-align: center; background-color: black; color: white; }
+        canvas { display: block; margin: auto; background-color: black; }
+    </style>
+</head>
+<body>
+    <h1>Space Explorer Game</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <p>Loading game...</p>
+
+    <script type="module">
+        async function main() {
+            let pyodide = await loadPyodide();
+
+            // Load the game file (space_explorer.py)
+            const gameCode = await fetch('space_explorer.py').then(response => response.text());
+
+            // Now run your Python code
+            pyodide.runPython(gameCode);
+        }
+        main();
+    </script>
+</body>
+</html>
+
+Best regards,
+
+Nick Ligocki 
+________________________________________
+From: Ligocki, Nicholas <Nicholas.Ligocki@fanucamerica.com>
+Sent: Friday, September 20, 2024 12:48:37 PM
+To: Ligocki, Nicholas <Nicholas.Ligocki@fanucamerica.com>
+Subject: RE: Space_Explorer Game 
+ 
+import pygame
+import random
+ 
+# Initialize Pygame
+pygame.init()
+ 
+# Constants
+WIDTH, HEIGHT = 800, 600
+SHIP_WIDTH, SHIP_HEIGHT = 50, 30
+ASTEROID_RADIUS = 25
+SUPER_ASTEROID_RADIUS = 35
+LASER_WIDTH, LASER_HEIGHT = 3, 5
+BOMB_SIZE = 20
+EXPLOSION_FRAMES = 6
+SUPER_ASTEROID_HEALTH = 2
+BOX_SIZE = 30  # Original size of the box for the force field
+ 
+# Colors
+BLACK = (0, 0, 0)
+SILVER = (192, 192, 192)
+YELLOW = (255, 255, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)  # Color for the force field box
+FORCE_FIELD_COLOR = (0, 255, 255, 100)  # Semi-transparent cyan for the force field
+ 
+# Set up the display
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Space Invader Style Game")
+ 
+# Load assets
+ship_image = pygame.Surface((SHIP_WIDTH, SHIP_HEIGHT), pygame.SRCALPHA)
+pygame.draw.ellipse(ship_image, SILVER, (0, 0, SHIP_WIDTH, SHIP_HEIGHT))
+ 
+# Create laser image
+laser_image = pygame.Surface((LASER_WIDTH, LASER_HEIGHT))
+laser_image.fill(YELLOW)
+ 
+# Create bomb image (star shape)
+def create_star_bomb():
+    bomb_surface = pygame.Surface((BOMB_SIZE, BOMB_SIZE), pygame.SRCALPHA)
+    pygame.draw.polygon(bomb_surface, RED, [(10, 0), (12, 7), (20, 7), (13, 12), (15, 20), (10, 15), (5, 20), (7, 12), (0, 7), (8, 7)])
+    return bomb_surface
+ 
+# Explosion class
+class Explosion:
+    def __init__(self, x, y):
+        self.frames = [pygame.Surface((50, 50), pygame.SRCALPHA) for _ in range(EXPLOSION_FRAMES)]
+        for i in range(EXPLOSION_FRAMES):
+            pygame.draw.circle(self.frames[i], (255, 255 - i * 40, 0), (25, 25), 25 - i * 5)
+        self.rect = self.frames[0].get_rect(center=(x, y))
+        self.current_frame = 0
+        self.animation_speed = 5
+        self.last_update = 0
+ 
+    def update(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_update > self.animation_speed:
+            self.last_update = now
+            self.current_frame += 1
+            if self.current_frame >= EXPLOSION_FRAMES:
+                self.current_frame = EXPLOSION_FRAMES
+ 
+    def draw(self, surface):
+        if self.current_frame < EXPLOSION_FRAMES:
+            surface.blit(self.frames[self.current_frame], self.rect)
+ 
+class Ship:
+    def __init__(self):
+        self.rect = ship_image.get_rect(center=(WIDTH // 2, HEIGHT - 50))
+        self.health = 2  # Change health to 2 lives
+        self.invulnerable = False
+        self.invulnerable_start_time = 0
+ 
+    def move(self, dx, dy):
+        self.rect.x += dx
+        self.rect.y += dy
+        self.rect.x = max(0, min(WIDTH - SHIP_WIDTH, self.rect.x))
+        self.rect.y = max(0, min(HEIGHT - SHIP_HEIGHT, self.rect.y))
+ 
+    def activate_force_field(self):
+        self.invulnerable = True
+        self.invulnerable_start_time = pygame.time.get_ticks()  # Start the timer
+ 
+    def update(self):
+        if self.invulnerable and (pygame.time.get_ticks() - self.invulnerable_start_time >= 3000):
+            self.invulnerable = False  # Deactivate force field
+ 
+    def draw(self, surface):
+        surface.blit(ship_image, self.rect)
+        if self.invulnerable:
+            force_field_rect = pygame.Rect(self.rect.x - 10, self.rect.y - 10, SHIP_WIDTH + 20, SHIP_HEIGHT + 20)
+            pygame.draw.ellipse(surface, FORCE_FIELD_COLOR, force_field_rect)
+ 
+class Laser:
+    def __init__(self, x, y):
+        self.rect = laser_image.get_rect(center=(x + SHIP_WIDTH // 2, y))
+ 
+    def move(self):
+        self.rect.y -= 10
+        return self.rect.y < 0
+ 
+class Asteroid:
+    def __init__(self, speed):
+        self.rect = pygame.Rect(random.randint(0, WIDTH - ASTEROID_RADIUS * 2), 0, ASTEROID_RADIUS * 2, ASTEROID_RADIUS * 2)
+        self.speed = speed
+ 
+    def fall(self):
+        self.rect.y += self.speed
+        return self.rect.y > HEIGHT
+ 
+class SuperAsteroid(Asteroid):
+    def __init__(self, speed):
+        super().__init__(speed)
+        self.health = SUPER_ASTEROID_HEALTH
+ 
+    def draw(self, surface):
+        pygame.draw.circle(surface, GREEN, (self.rect.x + SUPER_ASTEROID_RADIUS, self.rect.y + SUPER_ASTEROID_RADIUS), SUPER_ASTEROID_RADIUS)
+ 
+class Bomb:
+    def __init__(self, x, y, asteroids):
+        self.rect = create_star_bomb().get_rect(center=(x + SHIP_WIDTH // 2, y))
+        self.exploded = False
+        self.asteroids = asteroids
+        self.explosion = None
+ 
+    def update(self):
+        if not self.exploded:
+            self.rect.y -= 7
+            for asteroid in self.asteroids[:]:
+                if self.rect.colliderect(asteroid.rect.inflate(100, 100)):
+                    self.exploded = True
+                    self.explode()
+ 
+    def explode(self):
+        for asteroid in self.asteroids[:]:
+            if isinstance(asteroid, SuperAsteroid):
+                asteroid.health -= 1
+                if asteroid.health <= 0:
+                    self.asteroids.remove(asteroid)
+            else:
+                if asteroid.rect.colliderect(self.rect.inflate(100, 100)):
+                    self.asteroids.remove(asteroid)
+        self.explosion = Explosion(self.rect.centerx, self.rect.centery)
+ 
+class ForceFieldBox:
+    def __init__(self, speed):
+        self.size = int(BOX_SIZE * 1.5)
+        self.rect = pygame.Rect(random.randint(0, WIDTH - self.size), 0, self.size, self.size)
+        self.speed = speed
+ 
+    def move(self):
+        self.rect.y += self.speed
+        return self.rect.y > HEIGHT
+ 
+    def draw(self, surface):
+        pygame.draw.rect(surface, BLUE, self.rect)
+ 
+def display_level_up_message(level):
+    screen.fill(BLACK)
+    font = pygame.font.Font(None, 74)
+    level_up_text = font.render(f'Congratulations on passing Level {level}!', True, SILVER)
+    prepare_text = font.render('Prepare for next level...', True, SILVER)
+    screen.blit(level_up_text, (WIDTH // 2 - level_up_text.get_width() // 2, HEIGHT // 2 - 50))
+    screen.blit(prepare_text, (WIDTH // 2 - prepare_text.get_width() // 2, HEIGHT // 2 + 20))
+    pygame.display.flip()
+    pygame.time.wait(5000)
+ 
+def display_start_screen():
+    font = pygame.font.Font(None, 74)
+    welcome_text = font.render('Welcome to SPACE EXPLORER!', True, SILVER)
+    ready_text = font.render('Get ready to play...', True, SILVER)
+    start_text = font.render('Press ENTER to Start', True, SILVER)
+    exit_text = font.render('Press ESC to Exit', True, SILVER)
+ 
+    clock = pygame.time.Clock()
+    ship = Ship()
+    asteroids = []
+    for _ in range(5):
+        asteroids.append(Asteroid(1))
+ 
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    main()
+                    running = False
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+ 
+        for asteroid in asteroids[:]:
+            if asteroid.fall():
+                asteroids.remove(asteroid)
+                asteroids.append(Asteroid(1))
+ 
+        screen.fill(BLACK)
+        for asteroid in asteroids:
+            pygame.draw.circle(screen, YELLOW, (asteroid.rect.x + ASTEROID_RADIUS, asteroid.rect.y + ASTEROID_RADIUS), ASTEROID_RADIUS)
+ 
+        ship.draw(screen)
+        screen.blit(welcome_text, (WIDTH // 2 - welcome_text.get_width() // 2, HEIGHT // 2 - 100))
+        screen.blit(ready_text, (WIDTH // 2 - ready_text.get_width() // 2, HEIGHT // 2 - 50))
+        screen.blit(start_text, (WIDTH // 2 - start_text.get_width() // 2, HEIGHT // 2 + 50))
+        screen.blit(exit_text, (WIDTH // 2 - exit_text.get_width() // 2, HEIGHT // 2 + 100))
+ 
+        pygame.display.flip()
+        clock.tick(60)
+ 
+def main():
+    clock = pygame.time.Clock()
+    ship = Ship()
+    asteroids = []
+    lasers = []
+    bombs = []
+    super_asteroid = None
+    score = 0
+    level = 1
+    level_time = 60000
+    level_start_time = pygame.time.get_ticks()
+    force_field_boxes = []
+    box_timer = pygame.time.get_ticks()
+    running = True
+    bomb_deployed = False
+    super_asteroid_timer = pygame.time.get_ticks()
+ 
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+ 
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT]:
+            ship.move(-5, 0)
+        if keys[pygame.K_RIGHT]:
+            ship.move(5, 0)
+        if keys[pygame.K_UP]:
+            ship.move(0, -5)
+        if keys[pygame.K_DOWN]:
+            ship.move(0, 5)
+ 
+        if keys[pygame.K_SPACE]:
+            lasers.append(Laser(ship.rect.x, ship.rect.y))
+ 
+        if keys[pygame.K_RETURN] and not bomb_deployed:
+            bombs.append(Bomb(ship.rect.x, ship.rect.y, asteroids))
+            bomb_deployed = True
+        elif not keys[pygame.K_RETURN]:
+            bomb_deployed = False
+ 
+        if super_asteroid is None and pygame.time.get_ticks() - super_asteroid_timer >= 10000:
+            super_asteroid = SuperAsteroid(5 + level)
+            super_asteroid_timer = pygame.time.get_ticks()
+ 
+        if pygame.time.get_ticks() - box_timer >= 15000:
+            speed = random.randint(3, 5) + level
+            force_field_boxes.append(ForceFieldBox(speed))
+            box_timer = pygame.time.get_ticks()
+ 
+        if random.randint(1, max(10 - level, 1)) == 1:
+            asteroids.append(Asteroid(3 + level))
+ 
+        for asteroid in asteroids[:]:
+            if asteroid.fall():
+                asteroids.remove(asteroid)
+ 
+        if super_asteroid:
+            if super_asteroid.fall():
+                super_asteroid = None
+ 
+        for laser in lasers[:]:
+            if laser.move():
+                lasers.remove(laser)
+ 
+        for bomb in bombs[:]:
+            bomb.update()
+            if bomb.exploded:
+                bomb.explosion.update()
+                if bomb.explosion.current_frame >= EXPLOSION_FRAMES:
+                    bombs.remove(bomb)
+ 
+        for laser in lasers[:]:
+            for asteroid in asteroids[:]:
+                if laser.rect.colliderect(asteroid.rect):
+                    lasers.remove(laser)  # Remove the laser that hit an asteroid
+                    asteroids.remove(asteroid)  # Remove the first asteroid hit
+                    score += 1
+                    break  # Break after hitting one asteroid
+ 
+            if super_asteroid and laser.rect.colliderect(super_asteroid.rect):
+                lasers.remove(laser)
+                super_asteroid.health -= 1
+                if super_asteroid.health <= 0:
+                    super_asteroid = None
+                    score += 5
+ 
+        for asteroid in asteroids[:]:
+            if ship.rect.colliderect(asteroid.rect):
+                if not ship.invulnerable:
+                    ship.health -= 1  # Decrease health by 1
+                    if ship.health <= 0:  # Check if health is 0 after decrement
+                        running = False
+ 
+        if super_asteroid and ship.rect.colliderect(super_asteroid.rect):
+            if not ship.invulnerable:
+                ship.health -= 1
+                if ship.health <= 0:
+                    running = False
+ 
+        for box in force_field_boxes[:]:
+            if ship.rect.colliderect(box.rect):
+                ship.activate_force_field()
+                force_field_boxes.remove(box)
+ 
+        for box in force_field_boxes[:]:
+            if box.move():
+                force_field_boxes.remove(box)
+ 
+        if pygame.time.get_ticks() - level_start_time >= level_time:
+            display_level_up_message(level)
+            level += 1
+            level_start_time = pygame.time.get_ticks()
+ 
+        ship.update()
+ 
+        screen.fill(BLACK)
+        ship.draw(screen)
+        for asteroid in asteroids:
+            pygame.draw.circle(screen, YELLOW, (asteroid.rect.x + ASTEROID_RADIUS, asteroid.rect.y + ASTEROID_RADIUS), ASTEROID_RADIUS)
+        if super_asteroid:
+            super_asteroid.draw(screen)
+        for laser in lasers:
+            screen.blit(laser_image, laser.rect)
+        for bomb in bombs:
+            screen.blit(create_star_bomb(), bomb.rect)
+            if bomb.exploded and bomb.explosion:
+                bomb.explosion.draw(screen)
+ 
+        for box in force_field_boxes:
+            box.draw(screen)
+ 
+        font = pygame.font.Font(None, 36)
+        score_text = font.render(f'Score: {score}', True, SILVER)
+        screen.blit(score_text, (10, 10))
+ 
+        pygame.display.flip()
+        clock.tick(60)
+ 
+    # Game Over Screen
+    screen.fill(BLACK)
+    font = pygame.font.Font(None, 74)
+    game_over_text = font.render('Game Over!', True, SILVER)
+    final_score_text = font.render(f'Final Score: {score}', True, SILVER)
+    screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 2 - 20))
+    screen.blit(final_score_text, (WIDTH // 2 - final_score_text.get_width() // 2, HEIGHT // 2 + 20))
+    pygame.display.flip()
+    pygame.time.wait(3000)
+ 
+    pygame.quit()
+ 
+if __name__ == "__main__":
+    display_start_screen()  # Show the start screen before the game starts
+ 
